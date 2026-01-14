@@ -25,7 +25,7 @@ async def init_db():
         await db.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
-            balance INTEGER NOT NULL
+            balance INTEGER NOT NULL DEFAULT 1000
         )
         """)
         await db.execute("""
@@ -60,7 +60,17 @@ async def sodu(interaction: discord.Interaction):
             "SELECT balance FROM users WHERE user_id = ?", (uid,)
         ) as cursor:
             row = await cursor.fetchone()
-    balance = row[0] if row else 0
+
+        if not row:
+            await db.execute(
+                "INSERT INTO users (user_id, balance) VALUES (?, 1000)",
+                (uid,)
+            )
+            await db.commit()
+            balance = 1000
+        else:
+            balance = row[0]
+
     await interaction.response.send_message(
         f"💰 **Số dư của bạn:** {balance:,} xu"
     )
@@ -78,9 +88,10 @@ async def cuahang(interaction: discord.Interaction):
     msg = "🛒 **CỬA HÀNG**\n"
     for item, price in items:
         msg += f"• **{item}** — {price:,} xu\n"
+
     await interaction.response.send_message(msg)
 
-# ================= BUY (TRANSACTION SAFE) =================
+# ================= BUY =================
 @tree.command(name="mua", description="Mua vật phẩm")
 @app_commands.describe(item="Tên vật phẩm", amount="Số lượng")
 async def mua(interaction: discord.Interaction, item: str, amount: int = 1):
@@ -102,6 +113,7 @@ async def mua(interaction: discord.Interaction, item: str, amount: int = 1):
                     (item.lower(),)
                 ) as cursor:
                     row = await cursor.fetchone()
+
                 if not row:
                     await db.execute("ROLLBACK")
                     return await interaction.response.send_message(
@@ -137,10 +149,10 @@ async def mua(interaction: discord.Interaction, item: str, amount: int = 1):
 
                 await db.commit()
 
-            except:
+            except Exception as e:
                 await db.execute("ROLLBACK")
                 return await interaction.response.send_message(
-                    "❌ Lỗi giao dịch", ephemeral=True
+                    f"❌ Lỗi giao dịch", ephemeral=True
                 )
 
     await interaction.response.send_message(
@@ -152,3 +164,50 @@ async def mua(interaction: discord.Interaction, item: str, amount: int = 1):
 @app_commands.describe(user="Người nhận", amount="Số tiền")
 async def chuyentien(interaction: discord.Interaction, user: discord.Member, amount: int):
     sender = interaction.user.id
+    receiver = user.id
+
+    if sender == receiver:
+        return await interaction.response.send_message(
+            "❌ Không thể tự chuyển tiền cho chính mình", ephemeral=True
+        )
+
+    if amount <= 0:
+        return await interaction.response.send_message(
+            "❌ Số tiền không hợp lệ", ephemeral=True
+        )
+
+    lock = get_user_lock(sender)
+
+    async with lock:
+        async with aiosqlite.connect(DB_NAME) as db:
+            async with db.execute(
+                "SELECT balance FROM users WHERE user_id = ?",
+                (sender,)
+            ) as cursor:
+                row = await cursor.fetchone()
+
+            if not row or row[0] < amount:
+                return await interaction.response.send_message(
+                    "❌ Bạn không đủ tiền", ephemeral=True
+                )
+
+            await db.execute(
+                "UPDATE users SET balance = balance - ? WHERE user_id = ?",
+                (amount, sender)
+            )
+
+            await db.execute("""
+            INSERT INTO users (user_id, balance)
+            VALUES (?, ?)
+            ON CONFLICT(user_id)
+            DO UPDATE SET balance = balance + ?
+            """, (receiver, amount, amount))
+
+            await db.commit()
+
+    await interaction.response.send_message(
+        f"💸 Bạn đã chuyển **{amount:,} xu** cho **{user.display_name}**"
+    )
+
+# ================= RUN =================
+bot.run(TOKEN)
