@@ -6,7 +6,7 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-EXTS = ["economy","shop","bank","transfer","admin"]
+EXTS = ["economy", "shop", "transfer", "admin"]
 
 async def main():
     async with bot:
@@ -15,3 +15,4 @@ async def main():
         await bot.start(os.getenv("BOT_TOKEN"))
 
 asyncio.run(main())
+
