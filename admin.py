@@ -1,3 +1,4 @@
+import discord
 from discord.ext import commands
 from database import get_money, set_money, money_lock
 
@@ -10,22 +11,32 @@ class Admin(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command()
+    @commands.command(name="addmoney")
     @is_admin()
-    async def addmoney(self, ctx, member, amount: int):
+    async def add_money(self, ctx, member: discord.Member, amount: int):
+        if amount <= 0:
+            return await ctx.send("❌ Số tiền phải lớn hơn 0")
+
         async with money_lock:
             money = get_money(member.id)
             set_money(member.id, money + amount)
 
-        await ctx.send(f"✅ Đã cộng {amount} tiền cho {member.mention}")
+        await ctx.send(f"✅ Đã cộng **{amount} xu** cho {member.mention}")
 
-    @commands.command()
+    @commands.command(name="removemoney")
     @is_admin()
-    async def setmoney(self, ctx, member, amount: int):
-        async with money_lock:
-            set_money(member.id, amount)
+    async def remove_money(self, ctx, member: discord.Member, amount: int):
+        if amount <= 0:
+            return await ctx.send("❌ Số tiền phải lớn hơn 0")
 
-        await ctx.send(f"✅ Đã set tiền của {member.mention} = {amount}")
+        async with money_lock:
+            money = get_money(member.id)
+            if money < amount:
+                return await ctx.send("❌ Người chơi không đủ tiền")
+
+            set_money(member.id, money - amount)
+
+        await ctx.send(f"✅ Đã trừ **{amount} xu** của {member.mention}")
 
 async def setup(bot):
     await bot.add_cog(Admin(bot))
